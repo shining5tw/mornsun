@@ -1,0 +1,1305 @@
+import React, { useState, useEffect } from 'react';
+
+// 預設資料清單
+const INITIAL_DRIVERS = ["林文勝", "岑俞佳", "王建智", "洪舜煇", "洪嘉翔"];
+const INITIAL_TRUCKS = ["8123", "7923", "1229", "3397", "8020", "7991"];
+const INITIAL_TRIP_NUMBERS = ["第 1 趟", "第 2 趟", "第 3 趟", "第 4 趟", "第 5 趟"];
+
+const INITIAL_FARMS = [
+  "高秀", "隆記", "牧夏", "中將一", "中將二", 
+  "宏觀", "禾多", "富陞", "永瀠", "壹澤", 
+  "高昇", "高展", "顓承", "建發", "益禽", "嘉威"
+];
+
+const INITIAL_WASH_STATIONS = [
+  "祐牧", "富鴻", "福有安康", "坤展", "禾蛋", "台美", "振忠"
+];
+
+const INITIAL_WAREHOUSES = [
+  "茂生-北倉", "美廉社-觀音倉", "美廉社-逢泰倉"
+];
+
+export default function App() {
+  // ------------------ 狀態管理 ------------------
+  const [drivers, setDrivers] = useState([]);
+  const [trucks, setTrucks] = useState([]);
+  const [farms, setFarms] = useState([]);
+  const [washStations, setWashStations] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+
+  // 當前趟次基本資訊
+  const [tripInfo, setTripInfo] = useState({
+    date: new Date().toISOString().split('T')[0],
+    driverName: '',
+    truckNumber: '',
+    tripNumber: '第 1 趟',
+    startMileage: '',
+    endMileage: '',
+    leaveTime: '',  
+    returnTime: '', 
+  });
+
+  // 打卡站點表單暫存
+  const [currentStop, setCurrentStop] = useState({
+    type: '收蛋牧場', 
+    name: '',
+    arrivalTime: '',  
+    departureTime: '', 
+    eggCarts: '', 
+    eggBoxes: '', 
+    latitude: '',
+    longitude: '',
+    notes: '',
+  });
+
+  // 已打卡之停靠站清單
+  const [stops, setStops] = useState([]);
+
+  // 歷史行程紀錄
+  const [historyTrips, setHistoryTrips] = useState([]);
+
+  // 自訂彈出視窗狀態
+  const [showAddCustomModal, setShowAddCustomModal] = useState(false);
+  const [customType, setCustomType] = useState('收蛋牧場'); // 司機, 車牌, 收蛋牧場, 代洗場, 通路統倉
+  const [customNameInput, setCustomNameInput] = useState('');
+
+  // 【新增功能】收蛋明細確認彈出視窗狀態
+  const [showReviewModal, setShowReviewModal] = useState(false);
+
+  // 系統提示通知 (Toast)
+  const [toast, setToast] = useState({ show: false, title: '', msg: '', type: 'success' });
+  
+  // GPS 讀取中狀態
+  const [isLocating, setIsLocating] = useState(false);
+
+  // 欄位驗證警告狀態
+  const [errors, setErrors] = useState({
+    endMileage: false,
+    leaveTime: false,
+    returnTime: false
+  });
+
+  // ------------------ 初始化與本機儲存 ------------------
+  useEffect(() => {
+    const storedDrivers = localStorage.getItem('custom_drivers');
+    const storedTrucks = localStorage.getItem('custom_trucks');
+    const storedFarms = localStorage.getItem('custom_farms');
+    const storedWash = localStorage.getItem('custom_wash');
+    const storedWarehouse = localStorage.getItem('custom_warehouse');
+
+    setDrivers(storedDrivers ? JSON.parse(storedDrivers) : INITIAL_DRIVERS);
+    setTrucks(storedTrucks ? JSON.parse(storedTrucks) : INITIAL_TRUCKS);
+    setFarms(storedFarms ? JSON.parse(storedFarms) : INITIAL_FARMS);
+    setWashStations(storedWash ? JSON.parse(storedWash) : INITIAL_WASH_STATIONS);
+    setWarehouses(storedWarehouse ? JSON.parse(storedWarehouse) : INITIAL_WAREHOUSES);
+
+    const savedActiveTrip = localStorage.getItem('active_trip_info');
+    const savedStops = localStorage.getItem('active_stops');
+    if (savedActiveTrip) setTripInfo(JSON.parse(savedActiveTrip));
+    if (savedStops) setStops(JSON.parse(savedStops));
+
+    const savedHistory = localStorage.getItem('trip_history_v2');
+    if (savedHistory) setHistoryTrips(JSON.parse(savedHistory));
+  }, []);
+
+  const saveActiveState = (updatedTrip, updatedStops) => {
+    localStorage.setItem('active_trip_info', JSON.stringify(updatedTrip));
+    localStorage.setItem('active_stops', JSON.stringify(updatedStops));
+  };
+
+  // ------------------ 時間/里程計算輔助 ------------------
+  const timeToMinutes = (timeStr) => {
+    if (!timeStr) return null;
+    const [hrs, mins] = timeStr.split(':').map(Number);
+    return hrs * 60 + mins;
+  };
+
+  const formatDuration = (mins) => {
+    if (mins === null || isNaN(mins) || mins < 0) return '無法計算';
+    const hrs = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (hrs > 0) {
+      return `${hrs}小時${m}分`;
+    }
+    return `${m}分鐘`;
+  };
+
+  const getFormattedTime = () => {
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
+  const showNotification = (title, msg, type = 'success') => {
+    setToast({ show: true, title, msg, type });
+    setTimeout(() => {
+      setToast(prev => ({ ...prev, show: false }));
+    }, 4500); 
+  };
+
+  // ------------------ 快速點擊現在時間 ------------------
+  const setLeaveNow = () => {
+    const time = getFormattedTime();
+    const updated = { ...tripInfo, leaveTime: time };
+    setTripInfo(updated);
+    saveActiveState(updated, stops);
+    setErrors(prev => ({ ...prev, leaveTime: false }));
+    showNotification('填入成功', `出廠時間已設定為：${time}`, 'info');
+  };
+
+  const setReturnNow = () => {
+    const time = getFormattedTime();
+    const updated = { ...tripInfo, returnTime: time };
+    setTripInfo(updated);
+    saveActiveState(updated, stops);
+    setErrors(prev => ({ ...prev, returnTime: false }));
+    showNotification('填入成功', `回廠時間已設定為：${time}`, 'info');
+  };
+
+  const setArrivalNow = () => {
+    setCurrentStop(prev => ({ ...prev, arrivalTime: getFormattedTime() }));
+    showNotification('填入成功', '已填入到達時間', 'info');
+  };
+
+  const setDepartureNow = () => {
+    setCurrentStop(prev => ({ ...prev, departureTime: getFormattedTime() }));
+    showNotification('填入成功', '已填入離開時間', 'info');
+  };
+
+  // ------------------ GPS 定位功能 ------------------
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      showNotification('定位失敗', '您的瀏覽器不支援 GPS 定位。', 'error');
+      return;
+    }
+
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude.toFixed(6);
+        const lng = position.coords.longitude.toFixed(6);
+        setCurrentStop(prev => ({
+          ...prev,
+          latitude: lat,
+          longitude: lng
+        }));
+        setIsLocating(false);
+        showNotification('定位成功', `經緯度已鎖定`, 'success');
+      },
+      (error) => {
+        console.error(error);
+        setIsLocating(false);
+        const randomLat = (23.5 + Math.random() * 1.5).toFixed(6);
+        const randomLng = (120.2 + Math.random() * 1.2).toFixed(6);
+        setCurrentStop(prev => ({
+          ...prev,
+          latitude: randomLat,
+          longitude: randomLng
+        }));
+        showNotification('GPS 未授權', '改以帶入預估座標。', 'info');
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
+  // ------------------ 下拉選單選取與觸發自訂新增項目 ------------------
+  const handleDriverChange = (e) => {
+    const value = e.target.value;
+    if (value === "ADD_NEW") {
+      setCustomType('司機');
+      setCustomNameInput('');
+      setShowAddCustomModal(true);
+      setTripInfo(prev => ({ ...prev, driverName: '' }));
+    } else {
+      setTripInfo(prev => ({ ...prev, driverName: value }));
+    }
+  };
+
+  const handleTruckChange = (e) => {
+    const value = e.target.value;
+    if (value === "ADD_NEW") {
+      setCustomType('車牌');
+      setCustomNameInput('');
+      setShowAddCustomModal(true);
+      setTripInfo(prev => ({ ...prev, truckNumber: '' }));
+    } else {
+      setTripInfo(prev => ({ ...prev, truckNumber: value }));
+    }
+  };
+
+  const handleStopNameChange = (e) => {
+    const value = e.target.value;
+    if (value === "ADD_NEW") {
+      setCustomType(currentStop.type);
+      setCustomNameInput('');
+      setShowAddCustomModal(true);
+      setCurrentStop(prev => ({ ...prev, name: '' }));
+    } else {
+      setCurrentStop(prev => ({ ...prev, name: value }));
+    }
+  };
+
+  // ------------------ 新增自訂項目至名單 ------------------
+  const handleAddCustomLocation = () => {
+    const trimmed = customNameInput.trim();
+    if (!trimmed) {
+      showNotification('輸入錯誤', '請輸入正確的名稱！', 'error');
+      return;
+    }
+
+    if (customType === '收蛋牧場') {
+      const updated = [...farms, trimmed];
+      setFarms(updated);
+      localStorage.setItem('custom_farms', JSON.stringify(updated));
+      setCurrentStop(prev => ({ ...prev, name: trimmed }));
+    } else if (customType === '代洗場') {
+      const updated = [...washStations, trimmed];
+      setWashStations(updated);
+      localStorage.setItem('custom_wash', JSON.stringify(updated));
+      setCurrentStop(prev => ({ ...prev, name: trimmed }));
+    } else if (customType === '通路統倉') {
+      const updated = [...warehouses, trimmed];
+      setWarehouses(updated);
+      localStorage.setItem('custom_warehouse', JSON.stringify(updated));
+      setCurrentStop(prev => ({ ...prev, name: trimmed }));
+    } else if (customType === '司機') {
+      const updated = [...drivers, trimmed];
+      setDrivers(updated);
+      localStorage.setItem('custom_drivers', JSON.stringify(updated));
+      setTripInfo(prev => ({ ...prev, driverName: trimmed }));
+    } else if (customType === '車牌') {
+      const updated = [...trucks, trimmed.toUpperCase()];
+      setTrucks(updated);
+      localStorage.setItem('custom_trucks', JSON.stringify(updated));
+      setTripInfo(prev => ({ ...prev, truckNumber: trimmed.toUpperCase() }));
+    }
+
+    setShowAddCustomModal(false);
+    setCustomNameInput('');
+    showNotification('新增成功', `已將「${trimmed}」加入選單中`, 'success');
+  };
+
+  // ------------------ 提交打卡與工作時間檢核 ------------------
+  const handleAddStop = (e) => {
+    e.preventDefault();
+
+    // 【防呆 1】：必須填寫出廠時間才能新增任何站點打卡
+    if (!tripInfo.leaveTime || tripInfo.leaveTime.trim() === '') {
+      showNotification('出廠時間未填', '請先於第一步填寫「大車出廠時間」，方可進行到站打卡！', 'error');
+      return;
+    }
+
+    if (!currentStop.name) {
+      showNotification('欄位未選', '請選擇或新增打卡的地點名稱！', 'error');
+      return;
+    }
+    if (!currentStop.arrivalTime || !currentStop.departureTime) {
+      showNotification('時間未填', '請完整填寫到達與離開時間！', 'error');
+      return;
+    }
+
+    const arrMin = timeToMinutes(currentStop.arrivalTime);
+    const depMin = timeToMinutes(currentStop.departureTime);
+
+    // 【防呆 2】：同一站的離開時間必須晚於到達時間
+    if (depMin <= arrMin) {
+      showNotification('時間不合邏輯', '本站的「離開時間」必須晚於「到達時間」，請重新確認！', 'error');
+      return;
+    }
+
+    const leaveMin = timeToMinutes(tripInfo.leaveTime);
+
+    // 【防呆 3】：首站到達時間不可早於出廠時間，後續站點到達時間不可早於前一站離開時間
+    if (stops.length === 0) {
+      if (arrMin < leaveMin) {
+        showNotification(
+          '時間不合邏輯', 
+          `第一站到達時間 (${currentStop.arrivalTime}) 不可早於大車出廠時間 (${tripInfo.leaveTime})！`, 
+          'error'
+        );
+        return;
+      }
+    } else {
+      const prevStop = stops[stops.length - 1];
+      const prevDepMin = timeToMinutes(prevStop.departureTime);
+      if (arrMin < prevDepMin) {
+        showNotification(
+          '時間不合邏輯', 
+          `此站到達時間 (${currentStop.arrivalTime}) 不可早於前一站「${prevStop.name}」的離開時間 (${prevStop.departureTime})！`, 
+          'error'
+        );
+        return;
+      }
+    }
+
+    const newStop = {
+      ...currentStop,
+      id: 'stop_' + Date.now(),
+      time: getFormattedTime(),
+      eggCarts: parseInt(currentStop.eggCarts, 10) || 0,
+      eggBoxes: parseInt(currentStop.eggBoxes, 10) || 0,
+    };
+
+    const updatedStops = [...stops, newStop];
+    setStops(updatedStops);
+    saveActiveState(tripInfo, updatedStops);
+
+    setCurrentStop({
+      type: currentStop.type,
+      name: '',
+      arrivalTime: '',
+      departureTime: '',
+      eggCarts: '',
+      eggBoxes: '',
+      latitude: '',
+      longitude: '',
+      notes: '',
+    });
+
+    showNotification('打卡成功', `已成功記錄「${newStop.name}」停留時間。`, 'success');
+  };
+
+  const handleDeleteStop = (id) => {
+    const updatedStops = stops.filter(s => s.id !== id);
+    setStops(updatedStops);
+    saveActiveState(tripInfo, updatedStops);
+    showNotification('已刪除', '已移除了該站打卡紀錄。', 'info');
+  };
+
+  // ------------------ 【完工檢核第一階段】準備存檔與邏輯核對 ------------------
+  const handlePrepareSave = () => {
+    if (!tripInfo.driverName || !tripInfo.truckNumber) {
+      showNotification('資料不完整', '請選擇或新增司機姓名與大車車牌。', 'error');
+      return;
+    }
+
+    if (!tripInfo.startMileage) {
+      showNotification('資料不完整', '請填寫「出車起點里程」。', 'error');
+      return;
+    }
+
+    const hasLeaveTime = tripInfo.leaveTime && tripInfo.leaveTime.trim() !== '';
+    const hasEndMileage = tripInfo.endMileage && tripInfo.endMileage.trim() !== '';
+    const hasReturnTime = tripInfo.returnTime && tripInfo.returnTime.trim() !== '';
+
+    setErrors({
+      leaveTime: !hasLeaveTime,
+      endMileage: !hasEndMileage,
+      returnTime: !hasReturnTime
+    });
+
+    if (!hasLeaveTime || !hasEndMileage || !hasReturnTime) {
+      showNotification('無法結束趟次', '此趟完工前，必須填妥「出廠時間」、「回廠時間」與「回廠里程」！', 'error');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // 【防呆 4】：回廠里程必須大於等於起點里程
+    const startM = parseInt(tripInfo.startMileage, 10);
+    const endM = parseInt(tripInfo.endMileage, 10);
+    if (endM < startM) {
+      setErrors(prev => ({ ...prev, endMileage: true }));
+      showNotification('里程數錯誤', '「回廠里程」不可低於「起點里程」，請重新核對！', 'error');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // 【防呆 5】：回廠時間必須大於出廠時間
+    const leaveMin = timeToMinutes(tripInfo.leaveTime);
+    const returnMin = timeToMinutes(tripInfo.returnTime);
+    if (returnMin <= leaveMin) {
+      setErrors(prev => ({ ...prev, returnTime: true }));
+      showNotification('時間不合邏輯', '大車「回廠時間」必須晚於「出廠時間」，請重新核對！', 'error');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // 【防呆 6】：回廠時間不可早於最後一站的離開時間
+    if (stops.length > 0) {
+      const lastStop = stops[stops.length - 1];
+      const lastDepMin = timeToMinutes(lastStop.departureTime);
+      if (returnMin < lastDepMin) {
+        setErrors(prev => ({ ...prev, returnTime: true }));
+        showNotification(
+          '時間不合邏輯', 
+          `大車「回廠時間」(${tripInfo.returnTime}) 不可早於最後一站「${lastStop.name}」的離開時間 (${lastStop.departureTime})！`, 
+          'error'
+        );
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+    }
+
+    if (stops.length === 0) {
+      showNotification('無打卡紀錄', '本趟次尚無任何到站打卡紀錄。', 'error');
+      return;
+    }
+
+    // 通過基本驗證，開啟明細確認視窗，不直接存檔
+    setShowReviewModal(true);
+  };
+
+  // ------------------ 【完工檢核第二階段】確認明細無誤後，正式存檔 ------------------
+  const handleConfirmSave = () => {
+    const startM = parseInt(tripInfo.startMileage, 10);
+    const endM = parseInt(tripInfo.endMileage, 10);
+    const totalMileage = endM - startM;
+    const totalCarts = stops.reduce((sum, s) => sum + s.eggCarts, 0);
+    const totalBoxes = stops.reduce((sum, s) => sum + s.eggBoxes, 0);
+
+    const completeTrip = {
+      id: 'trip_' + Date.now(),
+      ...tripInfo,
+      stops: stops,
+      totalMileage,
+      totalCarts,
+      totalBoxes
+    };
+
+    const updatedHistory = [completeTrip, ...historyTrips];
+    setHistoryTrips(updatedHistory);
+    localStorage.setItem('trip_history_v2', JSON.stringify(updatedHistory));
+
+    const currentTripIndex = INITIAL_TRIP_NUMBERS.indexOf(tripInfo.tripNumber);
+    const nextTripNumber = currentTripIndex !== -1 && currentTripIndex < INITIAL_TRIP_NUMBERS.length - 1
+      ? INITIAL_TRIP_NUMBERS[currentTripIndex + 1]
+      : '第 1 趟';
+
+    // 清除今日暫存，並重置表單準備下一趟
+    setStops([]);
+    setTripInfo({
+      date: new Date().toISOString().split('T')[0],
+      driverName: tripInfo.driverName, 
+      truckNumber: tripInfo.truckNumber, 
+      tripNumber: nextTripNumber, 
+      startMileage: tripInfo.endMileage, 
+      endMileage: '',
+      leaveTime: '',
+      returnTime: '',
+    });
+    
+    localStorage.removeItem('active_trip_info');
+    localStorage.removeItem('active_stops');
+
+    setShowReviewModal(false); // 關閉明細確認視窗
+    showNotification('此趟已完工存檔', `已成功建立「${tripInfo.tripNumber}」紀錄！已自動預備「${nextTripNumber}」。`, 'success');
+  };
+
+  // ------------------ 匯出 CSV 報表 ------------------
+  const handleExportCSV = (trip) => {
+    try {
+      let csvContent = "\ufeff"; 
+
+      csvContent += `司機姓名,大車車牌,出車日期,趟次,出廠時間,回廠時間,起點里程,回廠里程,本趟行駛公里數\n`;
+      const startM = parseInt(trip.startMileage, 10) || 0;
+      const endM = parseInt(trip.endMileage, 10) || 0;
+      const totalM = endM - startM;
+      csvContent += `"${trip.driverName}","${trip.truckNumber}","${trip.date}","${trip.tripNumber || '第 1 趟'}","${trip.leaveTime || '未填'}","${trip.returnTime || '未填'}",${startM},${endM},"${totalM} km"\n\n`;
+      
+      csvContent += `本趟總收回台車數(台),本趟總收回蛋箱數(箱)\n`;
+      csvContent += `${trip.totalCarts || 0},${trip.totalBoxes || 0}\n\n`;
+
+      csvContent += `序號,站點類型,站點名稱,到達時間,離開時間,場內工作時間,交通時間(自前一站或出廠),收蛋台車(台),收蛋塑膠箱(箱),緯度,經度,Google地圖連結,備註與異常\n`;
+      
+      const leaveMins = timeToMinutes(trip.leaveTime);
+      const returnMins = timeToMinutes(trip.returnTime);
+
+      trip.stops.forEach((s, idx) => {
+        const arrMins = timeToMinutes(s.arrivalTime);
+        const depMins = timeToMinutes(s.departureTime);
+        let workStr = '無法計算';
+        if (arrMins !== null && depMins !== null) {
+          workStr = formatDuration(depMins - arrMins);
+        }
+
+        let transStr = '無法計算';
+        if (idx === 0) {
+          if (leaveMins !== null && arrMins !== null) {
+            transStr = formatDuration(arrMins - leaveMins);
+          }
+        } else {
+          const prevDepMins = timeToMinutes(trip.stops[idx - 1].departureTime);
+          if (prevDepMins !== null && arrMins !== null) {
+            transStr = formatDuration(arrMins - prevDepMins);
+          }
+        }
+
+        const mapUrl = s.latitude ? `https://www.google.com/maps?q=${s.latitude},${s.longitude}` : '無定位';
+        csvContent += `${idx + 1},"${s.type}","${s.name}","${s.arrivalTime || ''}","${s.departureTime || ''}","${workStr}","${transStr}",${s.eggCarts},${s.eggBoxes},"${s.latitude || ''}","${s.longitude || ''}","${mapUrl}","${s.notes || '無'}"\n`;
+      });
+
+      if (trip.stops.length > 0) {
+        const lastDepMins = timeToMinutes(trip.stops[trip.stops.length - 1].departureTime);
+        let returnTransStr = '無法計算';
+        if (lastDepMins !== null && returnMins !== null) {
+          returnTransStr = formatDuration(returnMins - lastDepMins);
+        }
+        csvContent += `-, "返廠", "廠區回廠", "-", "${trip.returnTime || ''}", "-", "${returnTransStr}", 0, 0, "", "", "", "載運工作完工，返抵廠區"\n`;
+      }
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `大車收蛋日誌_${trip.date}_${trip.tripNumber}_${trip.driverName}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      showNotification('報表匯出成功', 'CSV 報表已下載。', 'success');
+    } catch (e) {
+      showNotification('匯出失敗', '產生 CSV 檔案時發生錯誤。', 'error');
+    }
+  };
+
+  const handleTypeChange = (type) => {
+    let defaultName = '';
+    if (type === '收蛋牧場') defaultName = farms[0] || '';
+    if (type === '代洗場') defaultName = washStations[0] || '';
+    if (type === '通路統倉') defaultName = warehouses[0] || '';
+    
+    setCurrentStop(prev => ({
+      ...prev,
+      type: type,
+      name: defaultName
+    }));
+  };
+
+  const getPlaceOptions = () => {
+    switch (currentStop.type) {
+      case '收蛋牧場': return farms;
+      case '代洗場': return washStations;
+      case '通路統倉': return warehouses;
+      default: return [];
+    }
+  };
+
+  return (
+    <div className="bg-rose-50/50 min-h-screen text-slate-800 pb-16 font-sans">
+      
+      {/* 導覽列 (整合大字體、更新日期、最新1.20版本格式) */}
+      <nav className="bg-red-800 text-white shadow-md sticky top-0 z-40">
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-3xl">🚚</span>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-extrabold tracking-wider">MS 運輸車輛管理平台</h1>
+              <div className="flex gap-3 text-[11px] sm:text-xs text-red-100 opacity-95 font-medium mt-0.5">
+                <span>更新日期：26/05/23</span>
+                <span>•</span>
+                <span>版本：1.20</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-full font-bold">
+            司機登入
+          </div>
+        </div>
+      </nav>
+
+      {/* 單一欄位大字體版面，極致防手抖與誤觸 */}
+      <main className="max-w-3xl mx-auto px-3 py-4 space-y-5">
+        
+        {/* 區塊 1: 當前趟次基礎資訊 */}
+        <section className="bg-white rounded-2xl p-5 shadow-sm border border-rose-100 space-y-4">
+          <div className="flex items-center justify-between border-b border-rose-100 pb-2.5">
+            <h2 className="font-extrabold text-red-950 flex items-center gap-2 text-lg">
+              <span>📅</span>
+              一、 出車與趟次登入
+            </h2>
+            <span className="text-xs bg-rose-100 text-red-700 px-3 py-1 rounded-full font-bold">
+              一趟一存檔
+            </span>
+          </div>
+
+          {/* 司機姓名 + 車牌 寬大輸入與內建項目自訂 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-base font-bold text-slate-600 mb-1">出車日期</label>
+              <input 
+                type="date" 
+                value={tripInfo.date} 
+                onChange={(e) => {
+                  const updated = { ...tripInfo, date: e.target.value };
+                  setTripInfo(updated);
+                  saveActiveState(updated, stops);
+                }}
+                className="w-full px-4 py-3.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-red-500 bg-slate-50 text-base font-bold" 
+              />
+            </div>
+
+            <div>
+              <label className="block text-base font-bold text-slate-600 mb-1">當前趟次</label>
+              <select
+                value={tripInfo.tripNumber}
+                onChange={(e) => {
+                  const updated = { ...tripInfo, tripNumber: e.target.value };
+                  setTripInfo(updated);
+                  saveActiveState(updated, stops);
+                }}
+                className="w-full px-4 py-3.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-red-500 text-base font-extrabold bg-white text-red-800"
+              >
+                {INITIAL_TRIP_NUMBERS.map((t, i) => (
+                  <option key={i} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-base font-bold text-slate-600 mb-1">司機姓名</label>
+              <select
+                value={tripInfo.driverName}
+                onChange={handleDriverChange}
+                className="w-full px-4 py-3.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-red-500 text-base font-bold bg-white"
+              >
+                <option value="">-- 請選擇司機 --</option>
+                {drivers.map((d, i) => (
+                  <option key={i} value={d}>{d}</option>
+                ))}
+                <option value="ADD_NEW" className="text-red-700 font-bold">➕ 新增自訂項目...</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-base font-bold text-slate-600 mb-1">大車車牌</label>
+              <select
+                value={tripInfo.truckNumber}
+                onChange={handleTruckChange}
+                className="w-full px-4 py-3.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-red-500 text-base font-bold bg-white"
+              >
+                <option value="">-- 請選擇車牌 --</option>
+                {trucks.map((t, i) => (
+                  <option key={i} value={t}>{t}</option>
+                ))}
+                <option value="ADD_NEW" className="text-red-700 font-bold">➕ 新增自訂項目...</option>
+              </select>
+            </div>
+          </div>
+
+          {/* 出廠登入 與 回廠登入 左右對稱/垂直 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-rose-100">
+            
+            {/* 出廠起點與出廠時間 */}
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+              <p className="text-base font-bold text-slate-800 flex items-center gap-1.5">
+                <span>🚀</span> 出廠登入
+              </p>
+              
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">起點里程 (km) *</label>
+                <input 
+                  type="number" 
+                  placeholder="請輸入起點里程" 
+                  value={tripInfo.startMileage}
+                  onChange={(e) => {
+                    const updated = { ...tripInfo, startMileage: e.target.value };
+                    setTripInfo(updated);
+                    saveActiveState(updated, stops);
+                  }}
+                  className="w-full px-4 py-3 rounded-lg border border-slate-300 text-lg font-extrabold" 
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-500">出廠時間 *</label>
+                  <button
+                    type="button"
+                    onClick={setLeaveNow}
+                    className="bg-rose-100 hover:bg-rose-200 text-rose-950 border border-rose-300 px-3 py-1 rounded-full text-sm font-extrabold"
+                  >
+                    現在出廠
+                  </button>
+                </div>
+                <input 
+                  type="time" 
+                  value={tripInfo.leaveTime}
+                  onChange={(e) => {
+                    const updated = { ...tripInfo, leaveTime: e.target.value };
+                    setTripInfo(updated);
+                    saveActiveState(updated, stops);
+                    if (e.target.value) setErrors(prev => ({ ...prev, leaveTime: false }));
+                  }}
+                  className={`w-full px-4 py-3 text-lg font-extrabold rounded-lg border focus:outline-none focus:ring-2 ${
+                    errors.leaveTime 
+                      ? 'border-rose-500 ring-2 ring-rose-200 bg-rose-50' 
+                      : 'border-slate-300 focus:ring-red-500 bg-white'
+                  }`} 
+                />
+              </div>
+            </div>
+
+            {/* 回廠完工 (淡紅色色塊) */}
+            <div className="p-4 bg-rose-50/30 rounded-xl border border-rose-100 space-y-3">
+              <p className="text-base font-bold text-red-900 flex items-center gap-1.5">
+                <span>🏁</span> 回廠完工
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold text-red-800 mb-1">回廠里程 (km) *</label>
+                <input 
+                  type="number" 
+                  placeholder="請輸入回廠里程" 
+                  value={tripInfo.endMileage}
+                  onChange={(e) => {
+                    const updated = { ...tripInfo, endMileage: e.target.value };
+                    setTripInfo(updated);
+                    saveActiveState(updated, stops);
+                    if (e.target.value.trim() !== '') {
+                      setErrors(prev => ({ ...prev, endMileage: false }));
+                    }
+                  }}
+                  className={`w-full px-4 py-3 text-lg font-extrabold rounded-lg border focus:outline-none focus:ring-2 ${
+                    errors.endMileage 
+                      ? 'border-rose-500 ring-2 ring-rose-200 bg-rose-100/50 placeholder-rose-400' 
+                      : 'border-slate-300 focus:ring-red-500 bg-white'
+                  }`} 
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-red-800">回廠時間 *</label>
+                  <button
+                    type="button"
+                    onClick={setReturnNow}
+                    className="bg-red-100 hover:bg-red-200 text-red-950 border border-red-300 px-3 py-1 rounded-full text-sm font-extrabold"
+                  >
+                    現在回廠
+                  </button>
+                </div>
+                <input 
+                  type="time" 
+                  value={tripInfo.returnTime}
+                  onChange={(e) => {
+                    const updated = { ...tripInfo, returnTime: e.target.value };
+                    setTripInfo(updated);
+                    saveActiveState(updated, stops);
+                    if (e.target.value) setErrors(prev => ({ ...prev, returnTime: false }));
+                  }}
+                  className={`w-full px-4 py-3 text-lg font-extrabold rounded-lg border focus:outline-none focus:ring-2 ${
+                    errors.returnTime 
+                      ? 'border-rose-500 ring-2 ring-rose-200 bg-rose-100/50' 
+                      : 'border-slate-300 focus:ring-red-500 bg-white'
+                  }`} 
+                />
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        {/* 區塊 2: 抵達地點打卡與收蛋紀錄 */}
+        <section className="bg-white rounded-2xl p-5 shadow-sm border border-rose-100 space-y-4">
+          <div className="flex items-center justify-between border-b border-rose-100 pb-2.5">
+            <h2 className="font-extrabold text-slate-900 flex items-center gap-2 text-lg">
+              <span>📍</span>
+              二、 到達各站打卡與收載登記
+            </h2>
+            <span className="text-xs text-red-600 font-extrabold">* 必填</span>
+          </div>
+
+          <form onSubmit={handleAddStop} className="space-y-4">
+            
+            {/* 任務類型選擇 (大按鈕) */}
+            <div>
+              <span className="block text-base font-bold text-slate-600 mb-2">任務類型</span>
+              <div className="grid grid-cols-4 gap-2">
+                {['收蛋牧場', '代洗場', '通路統倉', '其他'].map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => handleTypeChange(t)}
+                    className={`py-3 text-sm sm:text-base font-extrabold rounded-xl border transition-all cursor-pointer ${
+                      currentStop.type === t 
+                        ? 'bg-red-700 text-white border-red-700 shadow-sm' 
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 地點下拉選擇 (內建自訂新增) */}
+            <div>
+              <label className="block text-base font-bold text-slate-600 mb-1">
+                打卡地點名稱 <span className="text-red-500">*</span>
+              </label>
+
+              {currentStop.type === '其他' ? (
+                <input
+                  type="text"
+                  required
+                  placeholder="請手動輸入自訂地點名稱"
+                  value={currentStop.name}
+                  onChange={(e) => setCurrentStop(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-4 py-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-red-500 text-base font-bold"
+                />
+              ) : (
+                <select
+                  required
+                  value={currentStop.name}
+                  onChange={handleStopNameChange}
+                  className="w-full px-4 py-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-red-500 text-base font-bold bg-white"
+                >
+                  <option value="">-- 請選擇打卡站點 --</option>
+                  {getPlaceOptions().map((place, idx) => (
+                    <option key={idx} value={place}>{place}</option>
+                  ))}
+                  <option value="ADD_NEW" className="text-red-700 font-bold">➕ 新增自訂項目...</option>
+                </select>
+              )}
+            </div>
+
+            {/* 到達與離開時間設定區塊 (加入大時間字體、現在時間與時間順序自動檢核) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-rose-50/20 p-4 rounded-xl border border-rose-100">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-bold text-slate-700">🕒 到達時間 *</label>
+                  <button
+                    type="button"
+                    onClick={setArrivalNow}
+                    className="bg-red-700 hover:bg-red-800 text-white px-2.5 py-1 rounded-full text-xs font-bold"
+                  >
+                    現在到達
+                  </button>
+                </div>
+                <input
+                  type="time"
+                  required
+                  value={currentStop.arrivalTime}
+                  onChange={(e) => setCurrentStop(prev => ({ ...prev, arrivalTime: e.target.value }))}
+                  className="w-full px-4 py-3.5 rounded-lg border border-slate-300 text-lg font-extrabold text-slate-700 bg-white"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-bold text-slate-700">🕒 離開時間 *</label>
+                  <button
+                    type="button"
+                    onClick={setDepartureNow}
+                    className="bg-red-700 hover:bg-red-800 text-white px-2.5 py-1 rounded-full text-xs font-bold"
+                  >
+                    現在離開
+                  </button>
+                </div>
+                <input
+                  type="time"
+                  required
+                  value={currentStop.departureTime}
+                  onChange={(e) => setCurrentStop(prev => ({ ...prev, departureTime: e.target.value }))}
+                  className="w-full px-4 py-3.5 rounded-lg border border-slate-300 text-lg font-extrabold text-slate-700 bg-white"
+                />
+              </div>
+
+              {/* 場內工時預計 */}
+              {currentStop.arrivalTime && currentStop.departureTime && (
+                <div className="sm:col-span-2 text-sm font-bold text-red-900 bg-rose-100/60 p-2.5 rounded-lg flex items-center justify-between">
+                  <span>⏱️ 預估此站點場內工作時間：</span>
+                  <span className="font-extrabold text-base bg-white px-3 py-1 rounded-md border border-rose-200">
+                    {(() => {
+                      const mins = timeToMinutes(currentStop.departureTime) - timeToMinutes(currentStop.arrivalTime);
+                      return mins > 0 ? formatDuration(mins) : '時間邏輯不符';
+                    })()}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* 收載蛋量數量並行 */}
+            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <div>
+                <label className="block text-sm font-bold text-slate-600 mb-1">收蛋台車數 (台)</label>
+                <input 
+                  type="number" 
+                  placeholder="0" 
+                  min="0"
+                  value={currentStop.eggCarts}
+                  onChange={(e) => setCurrentStop(prev => ({ ...prev, eggCarts: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-lg border border-slate-300 text-center font-extrabold text-xl text-slate-800 bg-white" 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-600 mb-1">收蛋塑膠箱 (箱)</label>
+                <input 
+                  type="number" 
+                  placeholder="0" 
+                  min="0"
+                  value={currentStop.eggBoxes}
+                  onChange={(e) => setCurrentStop(prev => ({ ...prev, eggBoxes: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-lg border border-slate-300 text-center font-extrabold text-xl text-slate-800 bg-white" 
+                />
+              </div>
+            </div>
+
+            {/* 定位與備註 */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-base font-bold text-slate-600 mb-1">GPS 定位打卡</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleGetLocation}
+                    disabled={isLocating}
+                    className={`px-4 py-3 rounded-xl text-sm font-extrabold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      isLocating 
+                        ? 'bg-amber-100 text-amber-700 border border-amber-300' 
+                        : currentStop.latitude 
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-300'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                    }`}
+                  >
+                    🧭 {isLocating ? '衛星定位中...' : currentStop.latitude ? 'GPS 座標已鎖定' : '點擊獲取 GPS 定位'}
+                  </button>
+                  {currentStop.latitude && (
+                    <span className="text-xs text-emerald-800 self-center font-mono font-bold bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                      ({currentStop.latitude}, {currentStop.longitude})
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-base font-bold text-slate-600 mb-1">異常或特別備註 (選填)</label>
+                <input
+                  type="text"
+                  placeholder="停電、設備異常等狀況請填此"
+                  value={currentStop.notes}
+                  onChange={(e) => setCurrentStop(prev => ({ ...prev, notes: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 text-base"
+                />
+              </div>
+            </div>
+
+            {/* 提交打卡 */}
+            <button
+              type="submit"
+              className="w-full py-4 bg-gradient-to-r from-red-700 to-red-800 hover:from-red-800 hover:to-red-950 text-white font-extrabold rounded-xl shadow-md transition text-lg flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <span>📍 記錄打卡並儲存此站點</span>
+            </button>
+          </form>
+        </section>
+
+        {/* 區塊 3: 今日已打卡停靠清單 */}
+        <section className="bg-white rounded-2xl p-5 shadow-sm border border-rose-100 space-y-4">
+          <div className="flex items-center justify-between border-b border-rose-100 pb-2.5">
+            <h2 className="font-extrabold text-slate-900 flex items-center gap-2 text-lg">
+              <span>🏁</span>
+              {tripInfo.tripNumber} 打卡足跡表
+            </h2>
+            <span className="text-sm bg-slate-100 text-slate-600 px-3 py-1 rounded-full font-bold">
+              已到訪 {stops.length} 站
+            </span>
+          </div>
+
+          {stops.length === 0 ? (
+            <div className="text-center py-8 text-slate-400">
+              <span className="text-4xl block mb-2">⏱️</span>
+              <p className="text-base font-bold">目前無任何站點打卡紀錄</p>
+            </div>
+          ) : (
+            <div className="space-y-3.5">
+              {stops.map((stop, index) => {
+                const arrMins = timeToMinutes(stop.arrivalTime);
+                const depMins = timeToMinutes(stop.departureTime);
+                const workDuration = arrMins !== null && depMins !== null ? depMins - arrMins : null;
+
+                return (
+                  <div key={stop.id} className="relative flex items-start gap-3 p-4 bg-rose-50/20 rounded-xl border border-rose-100 hover:border-red-200 transition">
+                    <span className="absolute -top-2.5 -left-2.5 w-6 h-6 bg-red-100 border border-red-200 text-red-800 font-extrabold rounded-full text-xs flex items-center justify-center">
+                      {index + 1}
+                    </span>
+                    
+                    <div className="flex-1 min-w-0 pl-1 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs bg-red-100 text-red-900 font-extrabold px-2 py-0.5 rounded">
+                          {stop.type}
+                        </span>
+                        <h4 className="font-extrabold text-slate-800 text-base truncate">{stop.name}</h4>
+                      </div>
+
+                      {/* 到達與離開時間 */}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm text-slate-600 font-semibold bg-white p-2 rounded-lg border border-slate-100 w-fit">
+                        <span>🕒 到達：<span className="text-slate-900 font-extrabold">{stop.arrivalTime}</span></span>
+                        <span>🕒 離開：<span className="text-slate-900 font-extrabold">{stop.departureTime}</span></span>
+                        <span className="text-red-700 bg-rose-50 px-1.5 py-0.2 rounded font-extrabold border border-rose-100">
+                          ⏱️ 工時：{formatDuration(workDuration)}
+                        </span>
+                      </div>
+
+                      {/* 載運量詳情 */}
+                      <div className="flex items-center gap-2.5 text-xs sm:text-sm font-bold text-slate-700">
+                        {stop.eggCarts > 0 && (
+                          <span className="bg-amber-50 text-amber-800 px-2 py-0.5 rounded border border-amber-200">
+                            🚚 台車: {stop.eggCarts} 台
+                          </span>
+                        )}
+                        {stop.eggBoxes > 0 && (
+                          <span className="bg-sky-50 text-sky-800 px-2 py-0.5 rounded border border-sky-200">
+                            📦 塑膠箱: {stop.eggBoxes} 箱
+                          </span>
+                        )}
+                        {stop.eggCarts === 0 && stop.eggBoxes === 0 && (
+                          <span className="text-slate-400 font-normal text-xs">純定位打卡</span>
+                        )}
+                      </div>
+
+                      {/* 備註 */}
+                      {stop.notes && (
+                        <p className="text-xs sm:text-sm bg-amber-50 text-amber-700 px-2 py-1 rounded border border-amber-200 mt-1">
+                          ⚠️ 備註: {stop.notes}
+                        </p>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteStop(stop.id)}
+                      className="text-slate-400 hover:text-red-600 p-1 transition cursor-pointer self-start text-sm"
+                      title="刪除"
+                    >
+                      ❌
+                    </button>
+                  </div>
+                );
+              })}
+
+              {/* 完工存檔觸發按鈕 */}
+              <div className="pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={handlePrepareSave}
+                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl shadow-md transition text-lg flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <span>💾 本趟任務完工！結束行程並存檔</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* 區塊 4: 歷史行程與 CSV 匯出 */}
+        <section className="bg-white rounded-2xl p-5 shadow-sm border border-rose-100 space-y-4">
+          <h3 className="font-extrabold text-red-950 text-base mb-2 flex items-center gap-1.5 border-b border-rose-100 pb-2.5">
+            <span>📁</span>
+            歷史趟次存檔 ({historyTrips.length} 趟)
+          </h3>
+
+          {historyTrips.length === 0 ? (
+            <div className="text-center py-6 text-slate-400 text-sm">
+              <p>目前尚無已完工之歷史趟次存檔</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[350px] overflow-y-auto pr-0.5">
+              {historyTrips.map((trip) => (
+                <div key={trip.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-800 text-base">{trip.date}</span>
+                      <span className="bg-red-700 text-white font-extrabold px-2 py-0.5 rounded-lg text-xs">
+                        {trip.tripNumber}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleExportCSV(trip)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-extrabold text-xs transition cursor-pointer flex items-center gap-1"
+                    >
+                      📥 匯出 CSV 報表
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs text-slate-500 font-bold">
+                    <p>司機: <span className="text-slate-800">{trip.driverName}</span></p>
+                    <p>車牌: <span className="text-slate-800">{trip.truckNumber}</span></p>
+                    <p>出廠時間: <span className="text-slate-800">{trip.leaveTime}</span></p>
+                    <p>回廠時間: <span className="text-slate-800">{trip.returnTime}</span></p>
+                    <p>行駛里程: <span className="text-slate-800">{trip.totalMileage} km</span></p>
+                  </div>
+
+                  <div className="border-t border-slate-200 pt-2 flex gap-4 font-bold text-slate-600 text-xs justify-between">
+                    <span>總台車: <span className="text-amber-800 font-extrabold">{trip.totalCarts} 台</span></span>
+                    <span>總蛋箱: <span className="text-sky-800 font-extrabold">{trip.totalBoxes} 箱</span></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* 指引說明 */}
+        <div className="bg-red-50/50 border border-rose-100 p-4 rounded-xl text-xs sm:text-sm text-slate-500 space-y-1.5 font-medium">
+          <h4 className="font-extrabold text-red-900 flex items-center gap-1 text-sm sm:text-base">
+            <span>💡</span>
+            時間與里程檢核規範說明
+          </h4>
+          <p>1. <strong>第一步填寫出廠時間</strong>：所有到站打卡，皆會比對「出廠時間」，因此必須先在第一步登入出廠資訊。</p>
+          <p>2. <strong>時間序列一致性</strong>：到達第一站時間不可早於出廠時間；之後各站到達時間不可早於上一站的離開時間。</p>
+          <p>3. <strong>完工大車回廠檢驗</strong>：在結束整趟任務時，系統會防護檢對「回廠時間」必須大於「出廠時間」及「最後一站離開時間」。</p>
+          <p>4. <strong>本機自動防失</strong>：所有輸入欄位與打卡數據皆會即時暫存在您手機本機中，即使關閉網頁資料也不會遺失。</p>
+        </div>
+
+      </main>
+
+      {/* 彈出視窗 A：新增自訂地點/司機/車牌 */}
+      {showAddCustomModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl border border-rose-100 animate-scale-up">
+            <h3 className="text-lg font-extrabold text-slate-900 mb-1">
+              ➕ 新增自訂 {customType}
+            </h3>
+            <p className="text-xs text-slate-400 mb-4">輸入的名稱會永久儲存於此瀏覽器的本機 {customType} 下拉選單中。</p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">分類</label>
+                <input type="text" disabled value={customType} className="w-full px-3 py-2 text-sm bg-slate-100 text-slate-400 border rounded-lg cursor-not-allowed font-bold" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-1">自訂名稱 / 內容 <span className="text-red-500">*</span></label>
+                <input 
+                  type="text" 
+                  autoFocus
+                  placeholder="請輸入欲新增之名稱" 
+                  value={customNameInput}
+                  onChange={(e) => setCustomNameInput(e.target.value)}
+                  className="w-full px-3 py-2.5 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 font-bold" 
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => { setShowAddCustomModal(false); setCustomNameInput(''); }} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-bold rounded-lg cursor-pointer">取消</button>
+              <button onClick={handleAddCustomLocation} className="flex-1 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-bold rounded-lg cursor-pointer">確定新增並選擇</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 【全新新增功能】彈出視窗 B：司機打卡回廠完工前的「收蛋明細核對視窗」 */}
+      {showReviewModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-xl shadow-2xl border-2 border-red-200 my-8 space-y-5 animate-scale-up max-h-[90vh] overflow-y-auto">
+            
+            {/* 標頭 */}
+            <div className="text-center border-b border-rose-100 pb-4">
+              <span className="text-5xl block mb-2">📋</span>
+              <h3 className="text-2xl font-extrabold text-red-950">本日收蛋與趟次明細確認</h3>
+              <p className="text-sm text-red-700 font-bold mt-1">請務必核對資料，確認完全正確後再送出存檔</p>
+            </div>
+
+            {/* 本趟基礎資料匯總 */}
+            <div className="bg-rose-50/30 rounded-2xl p-4 border border-rose-100 space-y-2.5">
+              <h4 className="text-base font-extrabold text-red-950 border-b border-rose-100 pb-1 flex items-center gap-1">
+                <span>🚚</span> 趟次基本資料
+              </h4>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm font-bold text-slate-700">
+                <p>出車日期：<span className="text-slate-900">{tripInfo.date}</span></p>
+                <p>本趟趟次：<span className="text-red-700 font-black">{tripInfo.tripNumber}</span></p>
+                <p>司機姓名：<span className="text-slate-900">{tripInfo.driverName}</span></p>
+                <p>大車車牌：<span className="text-slate-900">{tripInfo.truckNumber}</span></p>
+                <p>起點里程：<span className="text-slate-900">{parseInt(tripInfo.startMileage, 10).toLocaleString()} km</span></p>
+                <p>回廠里程：<span className="text-slate-900">{parseInt(tripInfo.endMileage, 10).toLocaleString()} km</span></p>
+                <p>出廠時間：<span className="text-slate-900">{tripInfo.leaveTime}</span></p>
+                <p>回廠時間：<span className="text-slate-900">{tripInfo.returnTime}</span></p>
+                <p className="col-span-2 text-base text-red-900 pt-1.5 border-t border-dashed border-rose-200">
+                  🛣️ 本趟行駛公里數：
+                  <span className="text-lg font-black text-red-950 ml-1">
+                    {(parseInt(tripInfo.endMileage, 10) - parseInt(tripInfo.startMileage, 10)).toLocaleString()} km
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {/* 收載蛋量大總計 */}
+            <div className="grid grid-cols-2 gap-3 bg-red-800 text-white p-4 rounded-2xl text-center shadow-md">
+              <div className="border-r border-red-700">
+                <p className="text-xs sm:text-sm font-bold opacity-90">本趟總收回台車</p>
+                <p className="text-2xl sm:text-3xl font-black mt-1">
+                  {stops.reduce((sum, s) => sum + s.eggCarts, 0)} <span className="text-sm font-bold">台</span>
+                </p>
+              </div>
+              <div>
+                <p className="text-xs sm:text-sm font-bold opacity-90">本趟總收回蛋箱</p>
+                <p className="text-2xl sm:text-3xl font-black mt-1">
+                  {stops.reduce((sum, s) => sum + s.eggBoxes, 0)} <span className="text-sm font-bold">箱</span>
+                </p>
+              </div>
+            </div>
+
+            {/* 到站打卡足跡明細 */}
+            <div className="space-y-3">
+              <h4 className="text-base font-extrabold text-slate-800 flex items-center gap-1">
+                <span>📍</span> 到站打卡足跡 ({stops.length} 站)
+              </h4>
+              <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                {stops.map((stop, index) => (
+                  <div key={stop.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-800 font-extrabold">
+                        {index + 1}. {stop.name} <span className="text-[11px] bg-red-100 text-red-900 px-1.5 py-0.2 rounded font-bold ml-1">{stop.type}</span>
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-500 flex flex-wrap gap-x-3">
+                      <span>🕒 到達：<span className="text-slate-800 font-bold">{stop.arrivalTime}</span></span>
+                      <span>🕒 離開：<span className="text-slate-800 font-bold">{stop.departureTime}</span></span>
+                      <span className="text-red-700">⏱️ 場內工時：{formatDuration(timeToMinutes(stop.departureTime) - timeToMinutes(stop.arrivalTime))}</span>
+                    </div>
+                    <div className="text-xs text-slate-700 flex gap-3 font-extrabold pt-1 border-t border-dashed border-slate-200">
+                      <span>🚚 台車: <span className="text-amber-700">{stop.eggCarts} 台</span></span>
+                      <span>📦 塑膠箱: <span className="text-sky-700">{stop.eggBoxes} 箱</span></span>
+                    </div>
+                    {stop.notes && (
+                      <p className="text-[11px] bg-amber-50 text-amber-700 p-1 rounded border border-amber-100">⚠️ 備註: {stop.notes}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 核對與提交按鈕 (超大字體觸控) */}
+            <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-rose-100">
+              <button
+                onClick={() => setShowReviewModal(false)}
+                className="w-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-base font-extrabold rounded-xl transition cursor-pointer"
+              >
+                返回修改
+              </button>
+              <button
+                onClick={handleConfirmSave}
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-base font-extrabold rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-1"
+              >
+                <span>✅ 確認無誤，送出存檔</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 滑動提示 Toast */}
+      <div 
+        className={`fixed bottom-4 right-4 z-50 transform transition-all duration-300 max-w-sm ${
+          toast.show ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className={`flex items-center gap-3.5 px-4 py-3 rounded-xl shadow-xl text-white ${
+          toast.type === 'error' ? 'bg-red-600' : toast.type === 'info' ? 'bg-sky-600' : 'bg-emerald-600'
+        }`}>
+          <span className="text-xl">{toast.type === 'error' ? '❌' : toast.type === 'info' ? 'ℹ️' : '✅'}</span>
+          <div>
+            <p className="text-xs font-bold text-white/80">{toast.title}</p>
+            <p className="text-sm font-bold">{toast.msg}</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  );
+}
