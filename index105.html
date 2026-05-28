@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MS 運輸車輛管理平台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 全域大字體與防手抖優化 */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #fff1f2; color: #334155; font-size: 18px; }
+        input, select, textarea { font-size: 18px !important; font-weight: bold !important; }
+        .btn-large { height: 55px; font-size: 20px; font-weight: bold; border-radius: 12px; }
+        .card { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(225, 29, 72, 0.1); border: 1px solid #ffe4e6; margin-bottom: 20px; }
+        .input-field { width: 100%; padding: 12px 16px; border-radius: 12px; border: 2px solid #e2e8f0; outline: none; transition: border-color 0.2s; }
+        .input-field:focus { border-color: #e11d48; }
+        .review-box { background-color: #fff1f2; padding: 20px; border-radius: 16px; border: 2px solid #fecdd3; }
+        /* 隱藏捲軸但可滑動 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="pb-20">
+
+    <nav class="bg-red-800 text-white shadow-md sticky top-0 z-40">
+        <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <span class="text-3xl">🚚</span>
+                <div>
+                    <h1 class="text-xl sm:text-2xl font-extrabold tracking-wider">MS 運輸車輛管理平台</h1>
+                    <div class="flex gap-3 text-[11px] sm:text-xs text-red-100 opacity-95 font-medium mt-0.5">
+                        <span>更新日期：26/05/23</span><span>•</span><span>版本：1.50</span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex gap-1 bg-red-900/60 p-1 rounded-xl">
+                <button id="tabDriver" onclick="switchTab('driver')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-red-900 shadow-sm transition">司機端</button>
+                <button id="tabAdmin" onclick="switchTab('admin')" class="px-3 py-1.5 rounded-lg text-xs font-bold text-red-100 transition">後台端</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-3xl mx-auto px-3 py-5">
+        
+        <div id="driverSection">
+            
+            <div class="card space-y-4">
+                <div class="flex items-center justify-between border-b border-rose-100 pb-2.5">
+                    <h2 class="font-extrabold text-red-950 flex items-center gap-2 text-lg"><span>📅</span>一、 出車與趟次登入</h2>
+                    <span class="text-xs bg-rose-100 text-red-700 px-3 py-1 rounded-full font-bold">一機自動備份</span>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-base font-bold text-slate-600 mb-1">出車日期</label>
+                        <input type="date" id="tripDate" class="input-field bg-slate-50">
+                    </div>
+                    <div>
+                        <label class="block text-base font-bold text-slate-600 mb-1">當前趟次</label>
+                        <select id="tripNumber" class="input-field text-red-800 bg-white"></select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-base font-bold text-slate-600 mb-1">司機姓名</label>
+                        <select id="driverName" class="input-field bg-white" onchange="handleSelectChange(this, 'drivers', '司機')"></select>
+                    </div>
+                    <div>
+                        <label class="block text-base font-bold text-slate-600 mb-1">大車車牌</label>
+                        <select id="truckNumber" class="input-field bg-white" onchange="handleSelectChange(this, 'trucks', '車牌')"></select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-rose-100">
+                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                        <p class="text-base font-bold text-slate-800">🚀 出廠登入</p>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">起點里程 (km) *</label>
+                            <input type="number" id="startMileage" placeholder="0" class="input-field">
+                        </div>
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-xs font-bold text-slate-500">出廠時間 *</label>
+                                <button onclick="setNow('leaveTime')" class="bg-rose-100 text-rose-950 px-3 py-1 rounded-full text-sm font-extrabold border border-rose-300">現在出廠</button>
+                            </div>
+                            <input type="time" id="leaveTime" class="input-field">
+                        </div>
+                    </div>
+                    <div class="p-4 bg-rose-50/50 rounded-xl border border-rose-100 space-y-3">
+                        <p class="text-base font-bold text-red-900">🏁 回廠完工</p>
+                        <div>
+                            <label class="block text-xs font-bold text-red-800 mb-1">回廠里程 (km) *</label>
+                            <input type="number" id="endMileage" placeholder="0" class="input-field">
+                        </div>
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-xs font-bold text-red-800">回廠時間 *</label>
+                                <button onclick="setNow('returnTime')" class="bg-red-100 text-red-950 px-3 py-1 rounded-full text-sm font-extrabold border border-red-300">現在回廠</button>
+                            </div>
+                            <input type="time" id="returnTime" class="input-field">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card space-y-4">
+                <div class="flex items-center justify-between border-b border-rose-100 pb-2.5">
+                    <h2 class="font-extrabold text-slate-900 flex items-center gap-2 text-lg"><span>📍</span>二、 到站打卡登記</h2>
+                </div>
+
+                <div>
+                    <span class="block text-base font-bold text-slate-600 mb-2">任務類型</span>
+                    <div class="grid grid-cols-4 gap-2" id="stopTypeGroup">
+                        </div>
+                </div>
+
+                <div>
+                    <label class="block text-base font-bold text-slate-600 mb-1">打卡地點名稱 <span class="text-red-500">*</span></label>
+                    <div id="stopNameContainer"></div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-rose-50/30 p-4 rounded-xl border border-rose-100">
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="block text-sm font-bold text-slate-700">🕒 到達時間 *</label>
+                            <button onclick="setNow('arrivalTime'); calculateDuration()" class="bg-red-700 text-white px-2.5 py-1 rounded-full text-xs font-bold">現在到達</button>
+                        </div>
+                        <input type="time" id="arrivalTime" onchange="calculateDuration()" class="input-field">
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="block text-sm font-bold text-slate-700">🕒 離開時間 *</label>
+                            <button onclick="setNow('departureTime'); calculateDuration()" class="bg-red-700 text-white px-2.5 py-1 rounded-full text-xs font-bold">現在離開</button>
+                        </div>
+                        <input type="time" id="departureTime" onchange="calculateDuration()" class="input-field">
+                    </div>
+                    <div class="sm:col-span-2 text-sm font-bold text-red-900 bg-rose-100/60 p-2.5 rounded-lg flex justify-between items-center hidden" id="durationBox">
+                        <span>⏱️ 預估場內工時：</span>
+                        <span id="durationText" class="bg-white px-3 py-1 rounded-md border border-rose-200"></span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-600 mb-1">台車數 (台)</label>
+                        <input type="number" id="eggCarts" placeholder="0" class="input-field text-center">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-slate-600 mb-1">塑膠箱 (箱)</label>
+                        <input type="number" id="eggBoxes" placeholder="0" class="input-field text-center">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-base font-bold text-slate-600 mb-1">GPS 定位</label>
+                        <button type="button" onclick="getLocation()" id="gpsBtn" class="w-full py-3.5 rounded-xl text-sm font-extrabold bg-slate-100 text-slate-700 border border-slate-300">
+                            🧭 點擊獲取定位
+                        </button>
+                        <input type="hidden" id="gpsLat"><input type="hidden" id="gpsLng">
+                    </div>
+                    <div>
+                        <label class="block text-base font-bold text-slate-600 mb-1">備註 (選填)</label>
+                        <input type="text" id="notes" placeholder="停電、設備異常等" class="input-field">
+                    </div>
+                </div>
+
+                <button onclick="addStop()" class="btn-large w-full bg-red-700 hover:bg-red-800 text-white flex items-center justify-center gap-2 shadow-md">
+                    <span>📍 記錄打卡並儲存此站</span>
+                </button>
+            </div>
+
+            <div class="card space-y-4">
+                <div class="flex items-center justify-between border-b border-rose-100 pb-2.5">
+                    <h2 class="font-extrabold text-slate-900 flex items-center gap-2 text-lg"><span>🏁</span>打卡足跡表</h2>
+                    <span class="text-sm bg-slate-100 text-slate-600 px-3 py-1 rounded-full font-bold" id="stopCount">已到訪 0 站</span>
+                </div>
+                
+                <div id="stopsList" class="space-y-3.5 max-h-[300px] overflow-y-auto no-scrollbar">
+                    </div>
+
+                <div class="pt-3 border-t border-slate-100">
+                    <button onclick="prepareSaveTrip()" class="btn-large w-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2 shadow-lg">
+                        <span>💾 本趟任務完工！核對並存檔</span>
+                    </button>
+                </div>
+            </div>
+            
+        </div>
+
+        <div id="adminSection" class="hidden">
+            <div id="adminLogin" class="card text-center space-y-4 max-w-sm mx-auto mt-10">
+                <span class="text-5xl block">🔐</span>
+                <h2 class="text-xl font-extrabold text-red-950">後台管理員登入</h2>
+                <input type="password" id="adminPwd" placeholder="輸入密碼 (ms888)" class="input-field text-center">
+                <button onclick="loginAdmin()" class="btn-large w-full bg-red-800 text-white">確認登入</button>
+            </div>
+
+            <div id="adminDashboard" class="hidden space-y-5">
+                <div class="card space-y-4">
+                    <div class="border-b border-rose-100 pb-3 flex justify-between items-center">
+                        <h2 class="font-extrabold text-red-950 text-lg">📊 本機工作日誌與一鍵合併</h2>
+                        <button onclick="logoutAdmin()" class="text-xs bg-slate-100 px-3 py-1.5 rounded border">登出</button>
+                    </div>
+                    
+                    <div class="bg-rose-50/50 p-4 rounded-xl border border-rose-100 space-y-3">
+                        <h3 class="text-base font-extrabold text-red-900">📅 選擇要匯出合併報表的日期</h3>
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <input type="date" id="exportDate" class="input-field flex-1">
+                            <button onclick="exportMergedCSV()" class="bg-emerald-600 text-white px-6 py-3 rounded-xl font-extrabold flex-1 flex justify-center items-center gap-2">
+                                📥 匯出當日合併 CSV 總表
+                            </button>
+                        </div>
+                        <p class="text-xs text-red-700 font-bold">💡 系統會自動計算站點交通時間、場內工時，並完美對齊輸出供 Excel 開啟。</p>
+                    </div>
+
+                    <div id="historyList" class="space-y-2.5 max-h-[400px] overflow-y-auto pr-1"></div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <div id="customModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl border border-rose-100">
+            <h3 class="text-xl font-extrabold text-slate-900 mb-2" id="modalTitle">➕ 新增項目</h3>
+            <div class="space-y-4">
+                <input type="text" id="customInput" placeholder="請輸入名稱" class="input-field">
+                <div class="flex gap-3">
+                    <button onclick="closeModal()" class="flex-1 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl">取消</button>
+                    <button onclick="confirmAddCustom()" class="flex-1 py-3 bg-red-700 text-white font-bold rounded-xl">確認新增</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="reviewModal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-xl shadow-2xl border-2 border-red-200 max-h-[90vh] overflow-y-auto">
+            <div class="text-center border-b border-rose-100 pb-4 mb-4">
+                <span class="text-5xl block mb-2">📋</span>
+                <h3 class="text-2xl font-extrabold text-red-950">本日收蛋明細二次確認</h3>
+            </div>
+            <div id="reviewContent" class="space-y-4"></div>
+            <div class="flex flex-col sm:flex-row gap-3 mt-5 pt-4 border-t border-rose-100">
+                <button onclick="closeReview()" class="w-full py-3.5 bg-slate-100 text-slate-700 font-extrabold rounded-xl">返回修改</button>
+                <button onclick="confirmSaveTrip()" class="w-full py-3.5 bg-emerald-600 text-white font-extrabold rounded-xl shadow-md">✅ 確認無誤，送出存檔</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-12 opacity-0 transition-all duration-300 pointer-events-none">
+        <div id="toastBody" class="flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl text-white">
+            <span id="toastIcon" class="text-xl">✅</span>
+            <span id="toastText" class="text-sm font-bold"></span>
+        </div>
+    </div>
+
+    <script>
+        // 1. 初始化資料
+        const DEFAULT_DATA = {
+            drivers: ["林文勝", "岑俞佳", "王建智", "洪舜煇", "洪嘉翔"],
+            trucks: ["8123", "7923", "1229", "3397", "8020", "7991"],
+            farms: ["高秀", "隆記", "牧夏", "中將一", "中將二", "宏觀", "禾多", "富陞", "永瀠", "壹澤", "高昇", "高展", "顓承", "建發", "益禽", "嘉威"],
+            washStations: ["祐牧", "富鴻", "福有安康", "坤展", "禾蛋", "台美", "振忠"],
+            warehouses: ["茂生-北倉", "美廉社-觀音倉", "美廉社-逢泰倉"],
+            tripNumbers: ["第 1 趟", "第 2 趟", "第 3 趟", "第 4 趟", "第 5 趟"]
+        };
+
+        let appData = JSON.parse(localStorage.getItem('ms_app_data')) || DEFAULT_DATA;
+        let stops = JSON.parse(localStorage.getItem('ms_active_stops')) || [];
+        let historyTrips = JSON.parse(localStorage.getItem('ms_history_trips')) || [];
+        
+        let currentType = '收蛋牧場';
+        let customTarget = '';
+
+        // 2. 頁面載入初始化
+        window.onload = () => {
+            document.getElementById('tripDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('exportDate').value = new Date().toISOString().split('T')[0];
+            renderDropdowns();
+            renderTypeButtons();
+            renderStops();
+            updateStopNameSelect();
+        };
+
+        // 3. UI 渲染函式
+        function renderDropdowns() {
+            populateSelect('tripNumber', appData.tripNumbers, false);
+            populateSelect('driverName', appData.drivers, true);
+            populateSelect('truckNumber', appData.trucks, true);
+        }
+
+        function populateSelect(id, list, addCustom) {
+            const select = document.getElementById(id);
+            select.innerHTML = '<option value="">-- 請選擇 --</option>';
+            list.forEach(item => select.add(new Option(item, item)));
+            if(addCustom) select.add(new Option("➕ 新增自訂...", "ADD_NEW"));
+        }
+
+        function renderTypeButtons() {
+            const types = ['收蛋牧場', '代洗場', '通路統倉', '其他'];
+            const container = document.getElementById('stopTypeGroup');
+            container.innerHTML = types.map(t => `
+                <button type="button" onclick="setType('${t}')" 
+                    class="py-2.5 text-xs sm:text-sm font-extrabold rounded-xl border transition ${currentType === t ? 'bg-red-700 text-white border-red-700' : 'bg-white text-slate-600'}">
+                    ${t}
+                </button>
+            `).join('');
+            updateStopNameSelect();
+        }
+
+        function setType(type) {
+            currentType = type;
+            renderTypeButtons();
+        }
+
+        function updateStopNameSelect() {
+            const container = document.getElementById('stopNameContainer');
+            if (currentType === '其他') {
+                container.innerHTML = '<input type="text" id="stopName" placeholder="輸入地點名稱" class="input-field bg-white">';
+            } else {
+                let list = currentType === '收蛋牧場' ? appData.farms : (currentType === '代洗場' ? appData.washStations : appData.warehouses);
+                let options = '<option value="">-- 請選擇站點 --</option>';
+                list.forEach(i => options += `<option value="${i}">${i}</option>`);
+                options += '<option value="ADD_NEW">➕ 新增自訂站點...</option>';
+                container.innerHTML = `<select id="stopName" class="input-field bg-white" onchange="handleSelectChange(this, '${currentType}', '站點')">${options}</select>`;
+            }
+        }
+
+        // 4. 自訂新增邏輯
+        function handleSelectChange(selectElem, targetList, title) {
+            if (selectElem.value === "ADD_NEW") {
+                customTarget = targetList;
+                document.getElementById('modalTitle').innerText = `➕ 新增自訂${title}`;
+                document.getElementById('customInput').value = '';
+                document.getElementById('customModal').classList.remove('hidden');
+                selectElem.value = ''; // 重置
+            }
+        }
+
+        function closeModal() { document.getElementById('customModal').classList.add('hidden'); }
+        
+        function confirmAddCustom() {
+            const val = document.getElementById('customInput').value.trim();
+            if (!val) return showToast("名稱不可為空", "error");
+            
+            let listKey = customTarget;
+            if(customTarget === '收蛋牧場') listKey = 'farms';
+            else if(customTarget === '代洗場') listKey = 'washStations';
+            else if(customTarget === '通路統倉') listKey = 'warehouses';
+
+            appData[listKey].push(val);
+            localStorage.setItem('ms_app_data', JSON.stringify(appData));
+            
+            closeModal();
+            renderDropdowns();
+            renderTypeButtons();
+            showToast(`已新增：${val}`, "success");
+        }
+
+        // 5. 輔助與時間計算
+        function setNow(id) {
+            const now = new Date();
+            const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            document.getElementById(id).value = time;
+        }
+
+        function timeToMins(t) {
+            if (!t) return 0;
+            const [h, m] = t.split(':').map(Number);
+            return h * 60 + m;
+        }
+
+        function formatDuration(mins) {
+            if (mins <= 0) return "無法計算";
+            const h = Math.floor(mins / 60);
+            const m = mins % 60;
+            return h > 0 ? `${h}小時${m}分` : `${m}分鐘`;
+        }
+
+        function calculateDuration() {
+            const arr = document.getElementById('arrivalTime').value;
+            const dep = document.getElementById('departureTime').value;
+            const box = document.getElementById('durationBox');
+            if (arr && dep) {
+                const diff = timeToMins(dep) - timeToMins(arr);
+                document.getElementById('durationText').innerText = diff > 0 ? formatDuration(diff) : "邏輯錯誤";
+                box.classList.remove('hidden');
+            } else {
+                box.classList.add('hidden');
+            }
+        }
+
+        // 6. GPS
+        function getLocation() {
+            const btn = document.getElementById('gpsBtn');
+            btn.innerText = "🧭 衛星定位中...";
+            if(navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        document.getElementById('gpsLat').value = pos.coords.latitude.toFixed(6);
+                        document.getElementById('gpsLng').value = pos.coords.longitude.toFixed(6);
+                        btn.innerText = `✅ 已定位 (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`;
+                        btn.className = "w-full py-3.5 rounded-xl text-sm font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-300";
+                        showToast("定位成功", "success");
+                    },
+                    (err) => {
+                        document.getElementById('gpsLat').value = "23.5123"; document.getElementById('gpsLng').value = "120.3123";
+                        btn.innerText = "⚠️ 帶入預估座標";
+                        showToast("無權限，使用預估座標", "info");
+                    }
+                );
+            }
+        }
+
+        // 7. 站點打卡邏輯
+        function addStop() {
+            const leaveTime = document.getElementById('leaveTime').value;
+            const name = document.getElementById('stopName').value;
+            const arrTime = document.getElementById('arrivalTime').value;
+            const depTime = document.getElementById('departureTime').value;
+
+            if (!leaveTime) return showToast("請先至上方填寫「出廠時間」！", "error");
+            if (!name) return showToast("請填寫地點名稱！", "error");
+            if (!arrTime || !depTime) return showToast("請完整填寫到達與離開時間！", "error");
+
+            const arrM = timeToMins(arrTime);
+            const depM = timeToMins(depTime);
+            const leaveM = timeToMins(leaveTime);
+
+            if (depM <= arrM) return showToast("離開時間必須晚於到達時間！", "error");
+            if (stops.length === 0 && arrM < leaveM) return showToast("首站到達不可早於出廠時間！", "error");
+            if (stops.length > 0 && arrM < timeToMins(stops[stops.length-1].departureTime)) {
+                return showToast("到達時間不可早於上一站離開時間！", "error");
+            }
+
+            const stopData = {
+                id: Date.now(), type: currentType, name: name, arrivalTime: arrTime, departureTime: depTime,
+                eggCarts: parseInt(document.getElementById('eggCarts').value) || 0,
+                eggBoxes: parseInt(document.getElementById('eggBoxes').value) || 0,
+                notes: document.getElementById('notes').value || "無",
+                lat: document.getElementById('gpsLat').value, lng: document.getElementById('gpsLng').value
+            };
+
+            stops.push(stopData);
+            localStorage.setItem('ms_active_stops', JSON.stringify(stops));
+            renderStops();
+            
+            // Reset fields
+            document.getElementById('arrivalTime').value = '';
+            document.getElementById('departureTime').value = '';
+            document.getElementById('eggCarts').value = '';
+            document.getElementById('eggBoxes').value = '';
+            document.getElementById('notes').value = '';
+            document.getElementById('durationBox').classList.add('hidden');
+            
+            showToast("成功加入站點！", "success");
+        }
+
+        function renderStops() {
+            document.getElementById('stopCount').innerText = `已到訪 ${stops.length} 站`;
+            const container = document.getElementById('stopsList');
+            if (stops.length === 0) {
+                container.innerHTML = '<div class="text-center py-6 text-slate-400">目前無紀錄</div>';
+                return;
+            }
+            container.innerHTML = stops.map((s, i) => {
+                const dur = timeToMins(s.departureTime) - timeToMins(s.arrivalTime);
+                return `
+                <div class="relative p-3 bg-rose-50/30 rounded-xl border border-rose-100">
+                    <span class="absolute -top-2 -left-2 bg-red-100 border border-red-200 text-red-800 font-bold rounded-full w-5 h-5 flex items-center justify-center text-xs">${i+1}</span>
+                    <div class="flex justify-between items-start pl-2">
+                        <div>
+                            <p class="font-extrabold text-slate-800">${s.name} <span class="text-[10px] bg-red-100 text-red-900 px-1 rounded">${s.type}</span></p>
+                            <p class="text-xs text-slate-600 mt-1">🕒 ${s.arrivalTime} ~ ${s.departureTime} (工時: ${formatDuration(dur)})</p>
+                            <p class="text-xs text-slate-700 font-bold mt-1">🚚 台車: ${s.eggCarts} | 📦 箱: ${s.eggBoxes}</p>
+                        </div>
+                        <button onclick="deleteStop(${s.id})" class="text-red-500 font-bold">❌</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function deleteStop(id) {
+            stops = stops.filter(s => s.id !== id);
+            localStorage.setItem('ms_active_stops', JSON.stringify(stops));
+            renderStops();
+        }
+
+        // 8. 完工與明細確認
+        function prepareSaveTrip() {
+            const driver = document.getElementById('driverName').value;
+            const truck = document.getElementById('truckNumber').value;
+            const startM = parseInt(document.getElementById('startMileage').value) || 0;
+            const endM = parseInt(document.getElementById('endMileage').value) || 0;
+            const leaveT = document.getElementById('leaveTime').value;
+            const returnT = document.getElementById('returnTime').value;
+
+            if (!driver || !truck) return showToast("請選擇司機與車牌", "error");
+            if (!leaveT || !returnT || endM === 0) return showToast("出回廠時間與里程未填妥！", "error");
+            if (endM < startM) return showToast("回廠里程不可低於起點！", "error");
+            if (timeToMins(returnT) <= timeToMins(leaveT)) return showToast("回廠時間必須晚於出廠時間！", "error");
+            
+            if (stops.length === 0) return showToast("本趟無打卡站點！", "error");
+            if (timeToMins(returnT) < timeToMins(stops[stops.length-1].departureTime)) {
+                return showToast("回廠時間不可早於最後一站離開時間！", "error");
+            }
+
+            // 準備彈窗內容
+            const totalCarts = stops.reduce((sum, s) => sum + s.eggCarts, 0);
+            const totalBoxes = stops.reduce((sum, s) => sum + s.eggBoxes, 0);
+            const content = `
+                <div class="review-box text-sm">
+                    <p><b>司機：</b>${driver} | <b>車牌：</b>${truck}</p>
+                    <p><b>里程：</b>${startM} ~ ${endM} km (行駛 <b>${endM-startM} km</b>)</p>
+                    <p><b>時間：</b>${leaveT} ~ ${returnT}</p>
+                    <hr class="my-2 border-rose-200">
+                    <p class="text-lg text-red-900 font-extrabold">📊 總收回台車：${totalCarts} 台</p>
+                    <p class="text-lg text-red-900 font-extrabold">📊 總收回蛋箱：${totalBoxes} 箱</p>
+                </div>
+            `;
+            document.getElementById('reviewContent').innerHTML = content;
+            document.getElementById('reviewModal').classList.remove('hidden');
+        }
+
+        function closeReview() { document.getElementById('reviewModal').classList.add('hidden'); }
+
+        function confirmSaveTrip() {
+            const tripRecord = {
+                id: 'TRIP_' + Date.now(),
+                date: document.getElementById('tripDate').value,
+                tripNum: document.getElementById('tripNumber').value,
+                driver: document.getElementById('driverName').value,
+                truck: document.getElementById('truckNumber').value,
+                startM: parseInt(document.getElementById('startMileage').value),
+                endM: parseInt(document.getElementById('endMileage').value),
+                leaveT: document.getElementById('leaveTime').value,
+                returnT: document.getElementById('returnTime').value,
+                stops: stops
+            };
+
+            historyTrips.unshift(tripRecord);
+            localStorage.setItem('ms_history_trips', JSON.stringify(historyTrips));
+
+            // 重置準備下一趟
+            const numIdx = appData.tripNumbers.indexOf(tripRecord.tripNum);
+            const nextTrip = numIdx !== -1 && numIdx < appData.tripNumbers.length - 1 ? appData.tripNumbers[numIdx+1] : appData.tripNumbers[0];
+            
+            document.getElementById('tripNumber').value = nextTrip;
+            document.getElementById('startMileage').value = tripRecord.endM;
+            document.getElementById('endMileage').value = '';
+            document.getElementById('leaveTime').value = '';
+            document.getElementById('returnTime').value = '';
+            stops = [];
+            localStorage.removeItem('ms_active_stops');
+            renderStops();
+            closeReview();
+            showToast("✅ 存檔成功！已自動備妥下一趟。", "success");
+            renderHistory();
+        }
+
+        // 9. 後台管理
+        function switchTab(tab) {
+            if(tab === 'driver') {
+                document.getElementById('driverSection').classList.remove('hidden');
+                document.getElementById('adminSection').classList.add('hidden');
+                document.getElementById('tabDriver').className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-red-900 shadow-sm transition";
+                document.getElementById('tabAdmin').className = "px-3 py-1.5 rounded-lg text-xs font-bold text-red-100 transition";
+            } else {
+                document.getElementById('driverSection').classList.add('hidden');
+                document.getElementById('adminSection').classList.remove('hidden');
+                document.getElementById('tabAdmin').className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-red-900 shadow-sm transition";
+                document.getElementById('tabDriver').className = "px-3 py-1.5 rounded-lg text-xs font-bold text-red-100 transition";
+                renderHistory();
+            }
+        }
+
+        function loginAdmin() {
+            if(document.getElementById('adminPwd').value === "ms888") {
+                document.getElementById('adminLogin').classList.add('hidden');
+                document.getElementById('adminDashboard').classList.remove('hidden');
+            } else {
+                showToast("密碼錯誤！", "error");
+            }
+        }
+
+        function logoutAdmin() {
+            document.getElementById('adminPwd').value = '';
+            document.getElementById('adminDashboard').classList.add('hidden');
+            document.getElementById('adminLogin').classList.remove('hidden');
+        }
+
+        function renderHistory() {
+            const list = document.getElementById('historyList');
+            const targetDate = document.getElementById('exportDate').value;
+            const filtered = historyTrips.filter(t => t.date === targetDate);
+            
+            if(filtered.length === 0) {
+                list.innerHTML = '<div class="text-center p-4 text-slate-400">當日無完工紀錄</div>';
+                return;
+            }
+
+            list.innerHTML = filtered.map(t => `
+                <div class="p-3 bg-white border border-rose-100 rounded-lg text-xs">
+                    <p class="font-extrabold text-red-900">${t.driver} | ${t.truck} | ${t.tripNum}</p>
+                    <p class="text-slate-600 mt-1">時間: ${t.leaveT}~${t.returnT} | 站數: ${t.stops.length}</p>
+                </div>
+            `).join('');
+        }
+
+        function exportMergedCSV() {
+            const targetDate = document.getElementById('exportDate').value;
+            const trips = historyTrips.filter(t => t.date === targetDate);
+            if(trips.length === 0) return showToast("當日無資料可匯出！", "error");
+
+            let csv = "\ufeff"; // BOM
+            csv += "司機姓名,大車車牌,出車日期,趟次,出廠時間,回廠時間,起點里程,回廠里程,本趟里程(km),本趟總台車,本趟總蛋箱,站點序號,站點類型,站點名稱,到達時間,離開時間,場內工作時間,交通時間,備註說明\n";
+
+            trips.forEach(t => {
+                const totalM = t.endM - t.startM;
+                const totalC = t.stops.reduce((s, x) => s + x.eggCarts, 0);
+                const totalB = t.stops.reduce((s, x) => s + x.eggBoxes, 0);
+                const lMin = timeToMins(t.leaveT);
+                const rMin = timeToMins(t.returnT);
+
+                t.stops.forEach((s, i) => {
+                    const aMin = timeToMins(s.arrivalTime);
+                    const dMin = timeToMins(s.departureTime);
+                    const wStr = formatDuration(dMin - aMin);
+                    let transStr = i === 0 ? formatDuration(aMin - lMin) : formatDuration(aMin - timeToMins(t.stops[i-1].departureTime));
+
+                    csv += `"${t.driver}","${t.truck}","${t.date}","${t.tripNum}","${t.leaveT}","${t.returnT}",${t.startM},${t.endM},${totalM},${totalC},${totalB},${i+1},"${s.type}","${s.name}","${s.arrivalTime}","${s.departureTime}","${wStr}","${transStr}","${s.notes}"\n`;
+                });
+
+                if(t.stops.length > 0) {
+                    const lastD = timeToMins(t.stops[t.stops.length-1].departureTime);
+                    csv += `"${t.driver}","${t.truck}","${t.date}","${t.tripNum}","${t.leaveT}","${t.returnT}",${t.startM},${t.endM},${totalM},${totalC},${totalB},-, "返廠", "廠區回廠", "-", "${t.returnT}", "-", "${formatDuration(rMin - lastD)}","完工返廠"\n`;
+                }
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `MS運輸車輛日誌合併報表_${targetDate}.csv`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            showToast("成功匯出 CSV 總表！", "success");
+        }
+
+        // 10. Toast 通知
+        function showToast(msg, type) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastText').innerText = msg;
+            document.getElementById('toastIcon').innerText = type === 'error' ? '❌' : '✅';
+            document.getElementById('toastBody').className = `flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl text-white ${type === 'error' ? 'bg-red-600' : 'bg-emerald-600'}`;
+            
+            toast.classList.remove('opacity-0', 'translate-y-12', 'pointer-events-none');
+            setTimeout(() => toast.classList.add('opacity-0', 'translate-y-12', 'pointer-events-none'), 3500);
+        }
+    </script>
+</body>
+</html>
